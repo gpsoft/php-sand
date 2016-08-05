@@ -19,7 +19,7 @@ function doit() {
     $width = 284;
     /* $width = 142; */
     /* $width = 568; */
-    $angle = 10;
+    $angle = 70;
 
     $angle = ($angle * -1 + 360) % 360;
     $editZoom = $width/$srcW;
@@ -39,6 +39,15 @@ function doit() {
     imagecopyresampled($dstImage, $srcImage,
         $dstX, $dstY, $cropX + $rotOffX, $cropY + $rotOffY,
         $dstW, $dstH, $cropW, $cropH);
+
+    $frameImage = imagecreate(284, 384);
+    $cidWhite = imagecolorallocate($frameImage, 255, 255, 255);
+    $cidRed = imagecolorallocate($frameImage, 255, 0, 0);
+    imagecolortransparent($frameImage, $cidRed);
+    imagefilledellipse($frameImage, 142, 192, 284, 384, $cidRed);
+    imagecopyresampled($dstImage, $frameImage, 0, 0, 0, 0,
+        284, 384, 284, 384);
+
     imagejpeg($dstImage, './dest.jpg');
 }
 
