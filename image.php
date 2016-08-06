@@ -1,125 +1,181 @@
 <?php
 
 function doit() {
-    ini_set('memory_limit', -1);
+    $editParam = [
+        'left'=>0,
+        'top'=>0,
+        'zoom'=>1.0,
+        'angle'=>0,
+    ];
 
-    $preSrcImage = imagecreatefromjpeg('./org.jpg');
-    $srcW = imagesx($preSrcImage);
-    $srcH = imagesy($preSrcImage);
+    $systemInfo = [
+        'TH2SCREEN'=>0.5,
+        'TH2FINAL'=>1.0,
+        'FINALW'=>284,
+        'FINALH'=>384,
+        'THUMBW'=>284,
+        'THUMBH'=>384,
+    ];
 
-    $srcImage = imagecreate($srcW, $srcH);
-    imagecolorallocate($srcImage, 255, 255, 255);
-    imagecopyresampled($srcImage, $preSrcImage, 0, 0, 0, 0,
-        $srcW, $srcH, $srcW, $srcH);
-    $dstImage = imagecreate(284, 384);
-    imagecolorallocate($dstImage, 255, 255, 255);
-
-    $left = 0;
-    $top = 55;
-    $width = 284;
-    $width = 142;
-    /* $width = 568; */
-    $angle = 90;
-
-    $angle = ($angle * -1 + 360) % 360;
-    $editZoom = $width/$srcW;
-
-    $rotOffX = 0;
-    $rotOffY = 0;
-    if ( $angle > 0 ) {
-        $srcImage = imagerotate($srcImage, $angle, 0);
-        $rotOffX = (int)((imagesx($srcImage) - $srcW) / 2);
-        $rotOffY = (int)((imagesy($srcImage) - $srcH) / 2);
-        $srcW = imagesx($srcImage);
-        $srcH = imagesy($srcImage);
-    }
-    print_r(compact(
-        'rotOffX', 'rotOffY',
-        'srcW', 'srcH'
-    ));
-
-    list($dstX, $dstY, $dstW, $dstH,
-        $cropX, $cropY, $cropW, $cropH) =
-        calcCopyParam(284, 384, $srcW, $srcH,
-            $left - $rotOffX, $top - $rotOffY, $editZoom, $angle);
-
-    imagecopyresampled($dstImage, $srcImage,
-        $dstX, $dstY, $cropX, $cropY,
-        $dstW, $dstH, $cropW, $cropH);
-
-    /* frameImage($dstImage, 284, 384); */
-
-    imagejpeg($dstImage, './dest.jpg');
+    applyEditParam($editParam, $systemInfo, './org.jpg', './dest.jpg');
 }
 
-function calcCopyParam(
-    $finalW, $finalH, $orgW, $orgH,
-    $editLeft, $editTop, $editZoom, $editAngle) {
+function getReadyOrgImage($path) {
+    $preImage = imagecreatefromjpeg($path);
+    $w = imagesx($preImage);
+    $h = imagesy($preImage);
 
-    $blnFitToWidth = true;
-    if ( $orgW * $finalH / $finalW > $orgH ) $blnFitToWidth = false;
-
-    $ratioF2TH = 1;
-
-    $cropX = (int)(-1 * $editLeft / $editZoom);
-    $cropY = (int)(-1 * $editTop / $editZoom);
-
-    $cropW = (int)($finalW * $ratioF2TH / $editZoom);
-    $cropH = (int)($finalH * $ratioF2TH / $editZoom);
-
-    $dstX = 0;
-    $dstY = 0;
-    $dstW = $finalW;
-    $dstH = $finalH;
-
-    $res = [$dstX, $dstY, $dstW, $dstH, $cropX, $cropY, $cropW, $cropH];
-    debug($res);
-
-    if ( $cropX < 0 ) {
-        $cropW += $cropX;
-        $dstX -= (int)($cropX * $editZoom);
-        $dstW += (int)($cropX * $editZoom);
-        $cropX = 0;
-    }
-    if ( $cropY < 0 ) {
-        $cropH += $cropY;
-        $dstY -= (int)($cropY * $editZoom);
-        $dstH += (int)($cropY * $editZoom);
-        $cropY = 0;
-    }
-
-    $res = [$dstX, $dstY, $dstW, $dstH, $cropX, $cropY, $cropW, $cropH];
-    debug($res);
-
-    if ( $cropX + $cropW > $orgW ) {
-        $delta = $cropX + $cropW - $orgW;
-        $cropW -= $delta;
-        $dstW -= (int)($delta * $editZoom);
-    }
-    if ( $cropY + $cropH > $orgH ) {
-        $delta = $cropY + $cropH - $orgH;
-        $cropH -= $delta;
-        $dstH -= (int)($delta * $editZoom);
-    }
-
-    $res = [$dstX, $dstY, $dstW, $dstH, $cropX, $cropY, $cropW, $cropH];
-    debug($res);
-
-    return $res;
+    $orgImage = imagecreate($w, $h);
+    imagecolorallocate($orgImage, 255, 255, 255); //余白の色
+    imagecopyresampled($orgImage, $preImage,
+        0, 0, 0, 0,
+        $w, $h, $w, $h);
+    return [$orgImage, $w, $h];
 }
 
-function frameImage($img, $w, $h) {
+function getReadyFinalImage($si) {
+    $dstImage = imagecreate($si['FINALW'], $si['FINALH']);
+    imagecolorallocate($dstImage, 255, 255, 255); //余白の色
+    return $dstImage;
+}
+
+function calcRatioA2B($aw, $ah, $bw, $bh) {
+    $w2h = $bh / $bw;
+    if ( $aw <= $bw && $ah <= $bh ) return 1.0;
+    if ( $ah < $aw * $w2h ) { // 幅フィット?
+        return $bw / $aw;
+    }
+    return $bh / $ah;
+}
+
+function calcRatioOrg2Thumb($w, $h, $si) {
+    return calcRatioA2B($w, $h, $si['THUMBW'], $si['THUMBH']);
+}
+
+function calcRatioOrg2Final($w, $h, $si) {
+    return calcRatioA2B($w, $h, $si['FINALW'], $si['FINALH']);
+}
+
+function coordScreen2Org($ep, $si, $o2th) {
+    $ep['left'] = $ep['left'] / $si['TH2SCREEN'] / $o2th;
+    $ep['top'] = $ep['top'] / $si['TH2SCREEN'] / $o2th;
+    return $ep;
+}
+
+function normalizeAngle($ep) {
+    $ep['angle'] = ($ep['angle'] % 360 + 360) % 360;
+    return $ep;
+}
+
+function calcWindowRect($ep, $si, $o2th) {
+    return [
+        'x'=> -1 * $ep['left'],
+        'y'=> -1 * $ep['top'],
+        'w'=> (int)($si['THUMBW'] / $o2th / $ep['zoom']),
+        'h'=> (int)($si['THUMBH'] / $o2th / $ep['zoom']),
+    ];
+}
+
+function updateWindowByRotation($win, $img, $orgW, $orgH) {
+    $w = imagesx($img);
+    $h = imagesy($img);
+    $win['x'] += ($w - $orgW) / 2;
+    $win['y'] += ($h - $orgH) / 2;
+    return [$win, $w, $h];
+}
+
+function optimizeCopyParam($dst, $win, $si, $zoom, $orgW, $orgH, $o2f) {
+    // left
+    $l = $win['x'];
+    if ( $l < 0 ) {
+        $win['w'] += $l;
+        $dst['x'] -= (int)($l * $zoom * $o2f);
+        $dst['w'] += (int)($l * $zoom * $o2f);
+        $win['x'] = 0;
+    }
+
+    // top
+    $t = $win['y'];
+    if ( $t < 0 ) {
+        $win['h'] += $t;
+        $dst['y'] -= (int)($t * $zoom * $o2f);
+        $dst['h'] += (int)($t * $zoom * $o2f);
+        $win['y'] = 0;
+    }
+
+    // right
+    $r = $win['x'] + $win['w'];
+    if ( $r > $orgW ) {
+        $win['w'] -= $r - $orgW;
+        $dst['w'] -= (int)(($r - $orgW) * $zoom * $o2f);
+    }
+
+    // bottom
+    $b = $win['y'] + $win['h'];
+    if ( $b > $orgH ) {
+        $win['h'] -= $b - $orgH;
+        $dst['h'] -= (int)(($b - $orgH) * $zoom * $o2f);
+    }
+
+    return [$dst, $win];
+}
+
+function frameImage($img) {
+    $w = imagesx($img);
+    $h = imagesy($img);
     $frameImage = imagecreate($w, $h);
     $cidWhite = imagecolorallocate($frameImage, 255, 255, 255);
     $cidRed = imagecolorallocate($frameImage, 255, 0, 0);
+
     imagecolortransparent($frameImage, $cidRed);
+
     imagefilledellipse($frameImage, $w/2, $h/2, $w, $h, $cidRed);
-    imagecopyresampled($img, $frameImage, 0, 0, 0, 0,
-        imagesx($img), imagesy($img), $w, $h);
+
+    imagecopyresampled($img, $frameImage,
+        0, 0, 0, 0,
+        $w, $h, $w, $h);
 }
 
-function debug($res) {
-    echo "({$res[0]},{$res[1]}) {$res[2]}x{$res[3]}"
-        ."←({$res[4]},{$res[5]}) {$res[6]}x{$res[7]}";
-    echo '<br />'.PHP_EOL;
+function applyEditParam($editParam, $systemInfo, $orgPath, $destPath) {
+
+    ini_set('memory_limit', -1);
+
+    list($orgImage, $orgW, $orgH) = getReadyOrgImage($orgPath);
+    $ratioOrg2Th = calcRatioOrg2Thumb($orgW, $orgH, $systemInfo);
+
+    $editParam = coordScreen2Org($editParam, $systemInfo, $ratioOrg2Th);
+    $editParam = normalizeAngle($editParam);
+    d($editParam);
+
+    $dest = ['x'=>0, 'y'=>0, 'w'=>$systemInfo['FINALW'], 'h'=>$systemInfo['FINALH']];
+    $window = calcWindowRect($editParam, $systemInfo, $ratioOrg2Th);
+
+    if ( $editParam['angle'] > 0 ) {
+        $orgImage = imagerotate($orgImage, $editParam['angle'], 0/* TODO */);
+        list($window, $orgW, $orgH) =
+            updateWindowByRotation($window, $orgImage, $orgW, $orgH);
+    }
+
+    $ratioOrg2Fin = calcRatioOrg2Final($orgW, $orgH, $systemInfo);
+    list($dest, $window) =
+        optimizeCopyParam($dest, $window,
+            $systemInfo, $editParam['zoom'], $orgW, $orgH, $ratioOrg2Fin);
+
+    $dstImage = getReadyFinalImage($systemInfo);
+
+    imagecopyresampled($dstImage, $orgImage,
+        $dest['x'], $dest['y'],
+        $window['x'], $window['y'],
+        $dest['w'], $dest['h'],
+        $window['w'], $window['h']
+    );
+
+    /* frameImage($dstImage); */
+
+    imagejpeg($dstImage, $destPath);
+}
+
+function d($t) {
+    print_r($t);
+    echo '<br/>'.PHP_EOL;
 }
