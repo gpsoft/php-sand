@@ -15,38 +15,39 @@ function doit() {
     imagecolorallocate($dstImage, 255, 255, 255);
 
     $left = 0;
-    $top = 0;
+    $top = 55;
     $width = 284;
-    /* $width = 142; */
+    $width = 142;
     /* $width = 568; */
-    $angle = 70;
+    $angle = 90;
 
     $angle = ($angle * -1 + 360) % 360;
     $editZoom = $width/$srcW;
-
-    list($dstX, $dstY, $dstW, $dstH,
-        $cropX, $cropY, $cropW, $cropH) =
-        calcCopyParam(284, 384, $srcW, $srcH, $left, $top, $editZoom, $angle);
 
     $rotOffX = 0;
     $rotOffY = 0;
     if ( $angle > 0 ) {
         $srcImage = imagerotate($srcImage, $angle, 0);
-        $rotOffX = (imagesx($srcImage) - $srcW) / 2 / $editZoom;
-        $rotOffY = (imagesy($srcImage) - $srcH) / 2 / $editZoom;
+        $rotOffX = (int)((imagesx($srcImage) - $srcW) / 2);
+        $rotOffY = (int)((imagesy($srcImage) - $srcH) / 2);
+        $srcW = imagesx($srcImage);
+        $srcH = imagesy($srcImage);
     }
+    print_r(compact(
+        'rotOffX', 'rotOffY',
+        'srcW', 'srcH'
+    ));
+
+    list($dstX, $dstY, $dstW, $dstH,
+        $cropX, $cropY, $cropW, $cropH) =
+        calcCopyParam(284, 384, $srcW, $srcH,
+            $left - $rotOffX, $top - $rotOffY, $editZoom, $angle);
 
     imagecopyresampled($dstImage, $srcImage,
-        $dstX, $dstY, $cropX + $rotOffX, $cropY + $rotOffY,
+        $dstX, $dstY, $cropX, $cropY,
         $dstW, $dstH, $cropW, $cropH);
 
-    $frameImage = imagecreate(284, 384);
-    $cidWhite = imagecolorallocate($frameImage, 255, 255, 255);
-    $cidRed = imagecolorallocate($frameImage, 255, 0, 0);
-    imagecolortransparent($frameImage, $cidRed);
-    imagefilledellipse($frameImage, 142, 192, 284, 384, $cidRed);
-    imagecopyresampled($dstImage, $frameImage, 0, 0, 0, 0,
-        284, 384, 284, 384);
+    /* frameImage($dstImage, 284, 384); */
 
     imagejpeg($dstImage, './dest.jpg');
 }
@@ -107,8 +108,18 @@ function calcCopyParam(
     return $res;
 }
 
+function frameImage($img, $w, $h) {
+    $frameImage = imagecreate($w, $h);
+    $cidWhite = imagecolorallocate($frameImage, 255, 255, 255);
+    $cidRed = imagecolorallocate($frameImage, 255, 0, 0);
+    imagecolortransparent($frameImage, $cidRed);
+    imagefilledellipse($frameImage, $w/2, $h/2, $w, $h, $cidRed);
+    imagecopyresampled($img, $frameImage, 0, 0, 0, 0,
+        imagesx($img), imagesy($img), $w, $h);
+}
+
 function debug($res) {
     echo "({$res[0]},{$res[1]}) {$res[2]}x{$res[3]}"
         ."←({$res[4]},{$res[5]}) {$res[6]}x{$res[7]}";
-    echo '<br />';
+    echo '<br />'.PHP_EOL;
 }
