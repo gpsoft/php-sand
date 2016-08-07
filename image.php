@@ -2,10 +2,10 @@
 
 function doit() {
     $editParam = [
-        'left'=>0,
+        'left'=>-20,
         'top'=>0,
-        'zoom'=>1.0,
-        'angle'=>0,
+        'zoom'=>0.8,
+        'angle'=>80,
     ];
 
     $systemInfo = [
@@ -17,7 +17,7 @@ function doit() {
         'THUMBH'=>384,
     ];
 
-    applyEditParam($editParam, $systemInfo, './org.jpg', './dest.jpg');
+    applyEditParam($editParam, $systemInfo, './orgh.jpg', './dest.jpg');
 }
 
 function getReadyOrgImage($path) {
@@ -25,17 +25,18 @@ function getReadyOrgImage($path) {
     $w = imagesx($preImage);
     $h = imagesy($preImage);
 
-    $orgImage = imagecreate($w, $h);
-    imagecolorallocate($orgImage, 255, 255, 255); //余白の色
+    $orgImage = imagecreateTrueColor($w, $h);
+    $cidWhite = imagecolorallocate($orgImage, 255, 255, 255); //余白の色
     imagecopyresampled($orgImage, $preImage,
         0, 0, 0, 0,
         $w, $h, $w, $h);
-    return [$orgImage, $w, $h];
+    return [$orgImage, $w, $h, $cidWhite];
 }
 
 function getReadyFinalImage($si) {
-    $dstImage = imagecreate($si['FINALW'], $si['FINALH']);
-    imagecolorallocate($dstImage, 255, 255, 255); //余白の色
+    $dstImage = imagecreateTrueColor($si['FINALW'], $si['FINALH']);
+    $cidWhite = imagecolorallocate($dstImage, 255, 255, 255); //余白の色
+    imagefill($dstImage, 0, 0, $cidWhite);
     return $dstImage;
 }
 
@@ -140,7 +141,7 @@ function applyEditParam($editParam, $systemInfo, $orgPath, $destPath) {
 
     ini_set('memory_limit', -1);
 
-    list($orgImage, $orgW, $orgH) = getReadyOrgImage($orgPath);
+    list($orgImage, $orgW, $orgH, $cidWhite) = getReadyOrgImage($orgPath);
     $ratioOrg2Th = calcRatioOrg2Thumb($orgW, $orgH, $systemInfo);
 
     $editParam = coordScreen2Org($editParam, $systemInfo, $ratioOrg2Th);
@@ -151,7 +152,7 @@ function applyEditParam($editParam, $systemInfo, $orgPath, $destPath) {
     $window = calcWindowRect($editParam, $systemInfo, $ratioOrg2Th);
 
     if ( $editParam['angle'] > 0 ) {
-        $orgImage = imagerotate($orgImage, $editParam['angle'], 0/* TODO */);
+        $orgImage = imagerotate($orgImage, $editParam['angle'], $cidWhite);
         list($window, $orgW, $orgH) =
             updateWindowByRotation($window, $orgImage, $orgW, $orgH);
     }
