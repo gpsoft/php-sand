@@ -3,9 +3,9 @@
 function doit() {
     $editParam = [
         'left'=>-20,
-        'top'=>0,
-        'zoom'=>0.8,
-        'angle'=>80,
+        'top'=>40,
+        'zoom'=>1.3,
+        'angle'=>10,
     ];
 
     $systemInfo = [
@@ -17,7 +17,7 @@ function doit() {
         'THUMBH'=>384,
     ];
 
-    applyEditParam($editParam, $systemInfo, './orgh.jpg', './dest.jpg');
+    applyEditParam($editParam, $systemInfo, './org.jpg', './dest.jpg');
 }
 
 function getReadyOrgImage($path) {
@@ -64,7 +64,7 @@ function coordScreen2Org($ep, $si, $o2th) {
 }
 
 function normalizeAngle($ep) {
-    $ep['angle'] = ($ep['angle'] % 360 + 360) % 360;
+    $ep['angle'] = (-1 * $ep['angle'] % 360 + 360) % 360;
     return $ep;
 }
 
@@ -171,7 +171,7 @@ function applyEditParam($editParam, $systemInfo, $orgPath, $destPath) {
         $window['w'], $window['h']
     );
 
-    /* frameImage($dstImage); */
+    frameImage($dstImage);
 
     imagejpeg($dstImage, $destPath);
 }
