@@ -1,26 +1,10 @@
 <?php
 
-function doit() {
-    $editParam = [
-        'left'=>0,
-        'top'=>0,
-        'zoom'=>1.0,
-        'angle'=>90,
-    ];
-
-    $systemInfo = [
-        'TH2SCREEN'=>0.5,
-        'TH2FINAL'=>1.0,
-        'FINALW'=>284,
-        'FINALH'=>384,
-        'THUMBW'=>284,
-        'THUMBH'=>384,
-        'SCREENW'=>142,
-        'SCREENH'=>192,
-    ];
-
-    editImage($editParam, $systemInfo, './orgh.jpg', './dest.jpg');
-}
+const FINAL2SCREEN = 0.5;
+const FINALW = 284;
+const FINALH = 384;
+const SCREENW = FINALW * FINAL2SCREEN;
+const SCREENH = FINALH * FINAL2SCREEN;
 
 /**
  * 加工対象のオリジナル画像を準備
@@ -45,8 +29,8 @@ function getReadyOrgImage($path) {
 /**
  * 最終画像用のキャンバスを準備
  */
-function getReadyFinalImage($si) {
-    $dstImage = imagecreateTrueColor($si['FINALW'], $si['FINALH']);
+function getReadyFinalImage() {
+    $dstImage = imagecreateTrueColor(FINALW, FINALH);
     $cidWhite = imagecolorallocate($dstImage, 255, 255, 255); //余白の色
     imagefill($dstImage, 0, 0, $cidWhite);
     return $dstImage;
@@ -59,7 +43,9 @@ function getReadyFinalImage($si) {
  */
 function calcRatioA2B($aw, $ah, $bw, $bh) {
     $w2h = $bh / $bw;
-    if ( $aw <= $bw && $ah <= $bh ) return 1.0;
+    if ( $aw <= $bw && $ah <= $bh ) { // 縦横ともに十分小さい?
+        return 1.0;  // 拡大はしない
+    }
     if ( $ah < $aw * $w2h ) { // 幅フィット?
         return $bw / $aw;
     }
@@ -68,34 +54,33 @@ function calcRatioA2B($aw, $ah, $bw, $bh) {
 }
 
 /**
- * オリジナルを何倍したらサムネイルのサイズになるか
+ * オリジナルを何倍したら画面上のサイズになるか
  */
-function calcRatioOrg2Thumb($w, $h, $si) {
-    return calcRatioA2B($w, $h, $si['THUMBW'], $si['THUMBH']);
+function calcRatioOrg2Screen($w, $h) {
+    return calcRatioA2B($w, $h, SCREENW, SCREENH);
 }
 
 /**
- * オリジナルを何倍したら最終画像のサイズになるか
+ * 画面上の座標系から、オリジナル画像上の座標系へ変換
  */
-function calcRatioOrg2Final($w, $h, $si) {
-    return calcRatioA2B($w, $h, $si['FINALW'], $si['FINALH']);
+function screen2Org($scrVal, $o2s) {
+    return (int)($scrVal / $o2s);
+}
+
+/**
+ * オリジナル画像上の座標系から最終画像上の座標系へ変換
+ */
+function org2Final($orgVal, $zoom, $o2f) {
+    return (int)($orgVal * $zoom * $o2f);
 }
 
 /**
  * 編集パラメータのleftとtopを
- * 画面上の座標系から、オロジナル画像上の座標系へ変換
+ * 画面上の座標系から、オリジナル画像上の座標系へ変換
  */
-function screen2Org($screenVal, $si, $o2th) {
-    return (int)($screenVal / $si['TH2SCREEN'] / $o2th);
-}
-
-/**
- * 編集パラメータのleftとtopを
- * 画面上の座標系から、オロジナル画像上の座標系へ変換
- */
-function coordScreen2Org($ep, $si, $o2th) {
-    $ep['left'] = screen2Org($ep['left'], $si, $o2th);
-    $ep['top'] = screen2Org($ep['top'], $si, $o2th);
+function coordScreen2Org($ep, $o2s) {
+    $ep['left'] = screen2Org($ep['left'], $o2s);
+    $ep['top'] = screen2Org($ep['top'], $o2s);
     return $ep;
 }
 
@@ -116,12 +101,12 @@ function normalizeAngle($ep) {
  *
  *
  */
-function calcWindowRect($ep, $si, $o2th) {
+function calcWindowRect($ep, $o2s) {
     return [
         'x'=> -1 * $ep['left'],
         'y'=> -1 * $ep['top'],
-        'w'=> screen2Org($si['SCREENW'], $si, $o2th),
-        'h'=> screen2Org($si['SCREENH'], $si, $o2th),
+        'w'=> (int)(screen2Org(SCREENW, $o2s) / $ep['zoom']),
+        'h'=> (int)(screen2Org(SCREENH, $o2s) / $ep['zoom']),
     ];
 }
 
@@ -136,8 +121,10 @@ function calcWindowRect($ep, $si, $o2th) {
  * よってウィンドウの位置が変わる。
  */
 function updateWindowByRotation($win, $img, $orgW, $orgH) {
+    // 回転後の新しいW&H
     $w = imagesx($img);
     $h = imagesy($img);
+
     $win['x'] += ($w - $orgW) / 2;
     $win['y'] += ($h - $orgH) / 2;
     return [$win, $w, $h];
@@ -150,19 +137,18 @@ function updateWindowByRotation($win, $img, $orgW, $orgH) {
  * オリジナル画像の外側をコピーしてしまうと、
  * コピー先の色が黒くなってしまう。
  */
-function optimizeCopyParam($dst, $win, $si, $zoom, $orgW, $orgH, $o2f) {
+function optimizeCopyParam($dst, $win, $orgW, $orgH, $zoom, $o2f) {
     // left, top, right, bottomそれぞれについて、
     // オリジナル画像からはみでてないかチェック。
     // はみ出ている場合は、ウィンドウとコピー先矩形を小さくする。
     // ウィンドウ座標系とコピー先座標系では単位が異なる点に注意。
-    //
 
     // left
     $l = $win['x'];
     if ( $l < 0 ) {
         $win['w'] += $l;
-        $dst['x'] -= (int)($l * $zoom * $o2f);
-        $dst['w'] += (int)($l * $zoom * $o2f);
+        $dst['x'] -= org2Final($l, $zoom, $o2f);
+        $dst['w'] += org2Final($l, $zoom, $o2f);
         $win['x'] = 0;
     }
 
@@ -170,8 +156,8 @@ function optimizeCopyParam($dst, $win, $si, $zoom, $orgW, $orgH, $o2f) {
     $t = $win['y'];
     if ( $t < 0 ) {
         $win['h'] += $t;
-        $dst['y'] -= (int)($t * $zoom * $o2f);
-        $dst['h'] += (int)($t * $zoom * $o2f);
+        $dst['y'] -= org2Final($t, $zoom, $o2f);
+        $dst['h'] += org2Final($t, $zoom, $o2f);
         $win['y'] = 0;
     }
 
@@ -179,14 +165,14 @@ function optimizeCopyParam($dst, $win, $si, $zoom, $orgW, $orgH, $o2f) {
     $r = $win['x'] + $win['w'];
     if ( $r > $orgW ) {
         $win['w'] -= $r - $orgW;
-        $dst['w'] -= (int)(($r - $orgW) * $zoom * $o2f);
+        $dst['w'] -= org2Final(($r - $orgW), $zoom, $o2f);
     }
 
     // bottom
     $b = $win['y'] + $win['h'];
     if ( $b > $orgH ) {
         $win['h'] -= $b - $orgH;
-        $dst['h'] -= (int)(($b - $orgH) * $zoom * $o2f);
+        $dst['h'] -= org2Final(($b - $orgH), $zoom, $o2f);
     }
 
     return [$dst, $win];
@@ -211,36 +197,40 @@ function frameImage($img) {
         $w, $h, $w, $h);
 }
 
-function editImage($editParam, $systemInfo, $orgPath, $destPath) {
+function editImage($editParam, $orgPath, $destPath) {
 
     ini_set('memory_limit', -1);
 
     // 加工対象画像をロードして
-    // 編集パラメータを調整。
+    // 各種情報を整理
     list($orgImage, $orgW, $orgH, $cidWhite) = getReadyOrgImage($orgPath);
-    $dstImage = getReadyFinalImage($systemInfo);
-    $ratioOrg2Th = calcRatioOrg2Thumb($orgW, $orgH, $systemInfo);
-    $ratioOrg2Fin = calcRatioOrg2Final($orgW, $orgH, $systemInfo);
-    $editParam = coordScreen2Org($editParam, $systemInfo, $ratioOrg2Th);
+    $ratioOrg2Screen = calcRatioOrg2Screen($orgW, $orgH);
+    $ratioOrg2Final = $ratioOrg2Screen / FINAL2SCREEN;
+    $editParam = coordScreen2Org($editParam, $ratioOrg2Screen);
     $editParam = normalizeAngle($editParam);
 
     // コピー先矩形とウィンドウ矩形(切り抜き範囲)。
-    $dest = ['x'=>0, 'y'=>0, 'w'=>$systemInfo['FINALW'], 'h'=>$systemInfo['FINALH']];
-    $window = calcWindowRect($editParam, $systemInfo, $ratioOrg2Th);
+    $dest = ['x'=>0, 'y'=>0, 'w'=>FINALW, 'h'=>FINALH];
+    $window = calcWindowRect($editParam, $ratioOrg2Screen);
 
     // 回転
     if ( $editParam['angle'] > 0 ) {
         $orgImage = imagerotate($orgImage, $editParam['angle'], $cidWhite);
         list($window, $orgW, $orgH) =
             updateWindowByRotation($window, $orgImage, $orgW, $orgH);
+        // 回転したことによりオリジナル画像のサイズが変わったとしても
+        // $ratioOrg2Xxxを再計算しない。
+        // 見た目のサイズが変わったとはいえ、
+        // 倍率が変わったわけではないので。
     }
 
     // コピー先矩形とウィンドウ矩形を最適化
     list($dest, $window) =
-        optimizeCopyParam($dest, $window,
-            $systemInfo, $editParam['zoom'], $orgW, $orgH, $ratioOrg2Fin);
+        optimizeCopyParam($dest, $window, $orgW, $orgH,
+            $editParam['zoom'], $ratioOrg2Final);
 
     // コピー
+    $dstImage = getReadyFinalImage();
     imagecopyresampled($dstImage, $orgImage,
         $dest['x'], $dest['y'],
         $window['x'], $window['y'],
